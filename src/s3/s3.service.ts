@@ -57,7 +57,7 @@ export class S3Service {
     });
 
     const region = this.configService.getOrThrow<string>('AWS_REGION');
-    let imageUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+    const imageUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 
     // Save image metadata in the database
     const dbImage = await this.prisma.image.create({

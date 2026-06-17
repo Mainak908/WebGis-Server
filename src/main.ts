@@ -1,3 +1,4 @@
+import fastifyCookie from '@fastify/cookie';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import {
@@ -12,9 +13,13 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
+  await app.register(fastifyCookie, {
+    secret: process.env.COOKIE_SECRET || 'webgis-secret-key',
+  });
+
   // Enable CORS for frontend integration
   app.enableCors({
-    origin: '*',
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
@@ -29,6 +34,6 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 5000;
   await app.listen(port, '0.0.0.0');
-  console.log(`NestJS Fastify Server running on http://localhost:${port}`);
+  console.log(`NestJS Fastify Server running on ${port} port`);
 }
 bootstrap();

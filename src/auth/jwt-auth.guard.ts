@@ -6,6 +6,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import type { FastifyRequest } from 'fastify';
+
+interface AuthenticatedRequest extends FastifyRequest {
+  cookies: Record<string, string | undefined>;
+  user?: { sub: number; username: string };
+}
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -15,19 +21,22 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const token = this.extractTokenFromHeader(request);
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const token = this.extractToken(request);
 
     if (!token) {
       throw new UnauthorizedException('Authentication token is missing');
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync(token, {
+      const payload = await this.jwtService.verifyAsync<{
+        sub: number;
+        username: string;
+      }>(token, {
         secret: this.configService.getOrThrow<string>('JWT_SECRET'),
       });
       // Set the user on the request
-      request['user'] = payload;
+      request.user = payload;
     } catch {
       throw new UnauthorizedException(
         'Authentication token is invalid or expired',
@@ -37,12 +46,21 @@ export class JwtAuthGuard implements CanActivate {
     return true;
   }
 
-  private extractTokenFromHeader(request: any): string | undefined {
-    const authorization = request.headers?.authorization;
+  private extractToken(request: AuthenticatedRequest): string | undefined {
+    // Try to extract from cookie first
+    if (request.cookies && request.cookies.token) {
+      return request.cookies.token;
+    }
+    // Fallback to Bearer token in Authorization header
+    const authorization = request.headers.authorization;
     if (!authorization) {
       return undefined;
     }
-    const [type, token] = authorization.split(' ') ?? [];
+    const parts = authorization.split(' ');
+    if (parts.length !== 2) {
+      return undefined;
+    }
+    const [type, token] = parts;
     return type === 'Bearer' ? token : undefined;
   }
 }

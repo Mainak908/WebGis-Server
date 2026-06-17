@@ -27,7 +27,12 @@ export class S3Controller {
       );
     }
     const userId = req.user.sub;
-    return this.s3Service.getUploadPresignedUrl(userId, filename, filetype, folder);
+    return this.s3Service.getUploadPresignedUrl(
+      userId,
+      filename,
+      filetype,
+      folder,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
