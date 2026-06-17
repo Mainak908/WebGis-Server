@@ -1,0 +1,131 @@
+import {
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service.js';
+
+@Injectable()
+export class S3Service {
+  private s3Client: S3Client;
+  private readonly logger = new Logger(S3Service.name);
+
+  constructor(
+    private configService: ConfigService,
+    private prisma: PrismaService,
+  ) {
+    const region = this.configService.getOrThrow<string>('AWS_REGION');
+    const accessKeyId =
+      this.configService.getOrThrow<string>('AWS_ACCESS_KEY_ID');
+    const secretAccessKey = this.configService.getOrThrow<string>(
+      'AWS_SECRET_ACCESS_KEY',
+    );
+
+    this.s3Client = new S3Client({
+      region,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+    });
+  }
+
+  async getUploadPresignedUrl(
+    userId: number,
+    filename: string,
+    filetype: string,
+    folder?: string,
+  ) {
+    const bucket = this.configService.getOrThrow<string>('AWS_S3_BUCKET');
+    const uniqueId = Math.random().toString(36).substring(2, 8);
+    const folderPath = folder ? `${folder}/` : '';
+    const key = `uploads/${userId}/${folderPath}${uniqueId}-${filename}`;
+
+    const command = new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ContentType: filetype,
+    });
+
+    // Generate PUT presigned URL valid for 15 mins (900s)
+    const presignedUrl = await getSignedUrl(this.s3Client, command, {
+      expiresIn: 900,
+    });
+
+    const region = this.configService.getOrThrow<string>('AWS_REGION');
+    let imageUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+
+    // Save image metadata in the database
+    const dbImage = await this.prisma.image.create({
+      data: {
+        key,
+        url: imageUrl,
+        userId,
+      },
+    });
+
+    return {
+      presignedUrl,
+      imageUrl,
+      image: dbImage,
+    };
+  }
+
+  async fetchAllImagesFromS3() {
+    const bucket = this.configService.getOrThrow<string>('AWS_S3_BUCKET');
+
+    try {
+      const command = new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: 'uploads/',
+      });
+
+      const response = await this.s3Client.send(command);
+      const contents = response.Contents || [];
+
+      // Generate GET presigned URLs so private images can be loaded securely
+      const images = await Promise.all(
+        contents.map(async (item) => {
+          const getCommand = new GetObjectCommand({
+            Bucket: bucket,
+            Key: item.Key!,
+          });
+          const signedUrl = await getSignedUrl(this.s3Client, getCommand, {
+            expiresIn: 3600,
+          });
+          return {
+            key: item.Key,
+            size: item.Size,
+            lastModified: item.LastModified,
+            url: signedUrl,
+          };
+        }),
+      );
+
+      return images;
+    } catch (error: any) {
+      this.logger.error(`Error listing S3 objects: ${error.message}`);
+      throw new Error(`Failed to list images from S3: ${error.message}`);
+    }
+  }
+
+  async getImagesFromDatabase() {
+    return this.prisma.image.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+}
