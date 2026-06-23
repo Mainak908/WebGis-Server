@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Param,
+  Post,
   Query,
   Request,
   UseGuards,
@@ -166,5 +168,30 @@ export class S3Controller {
   @Get('db-images')
   async getImagesFromDatabase() {
     return this.s3Service.getImagesFromDatabase();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('remarks')
+  async createRemark(
+    @Request() req: any,
+    @Body('towerId') towerId: string,
+    @Body('text') text: string,
+  ) {
+    if (!towerId || !text) {
+      throw new BadRequestException(
+        'towerId and text body parameters are required',
+      );
+    }
+    const userId = req.user.sub;
+    return this.s3Service.createRemark(userId, towerId, text);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('remarks/:towerId')
+  async getRemarksForTower(@Param('towerId') towerId: string) {
+    if (!towerId) {
+      throw new BadRequestException('towerId is required');
+    }
+    return this.s3Service.getRemarksForTower(towerId);
   }
 }

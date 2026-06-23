@@ -447,4 +447,40 @@ export class S3Service {
       return video;
     }
   }
+
+  async createRemark(userId: number, towerId: string, text: string) {
+    return this.prisma.remark.create({
+      data: {
+        towerId,
+        text,
+        userId,
+      },
+      include: {
+        user: {
+          select: {
+            username: true,
+          },
+        },
+      },
+    });
+  }
+
+  async getRemarksForTower(towerId: string) {
+    return this.prisma.remark.findMany({
+      where: {
+        towerId,
+      },
+      include: {
+        user: {
+          select: {
+            username: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
 }
+
